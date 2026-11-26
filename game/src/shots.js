@@ -32,28 +32,28 @@ function stageTakeoff(game) {
   advance(game, { ...IDLE, pitch: 0.35, throttleDelta: 1 }, 0.45);
 }
 
-/** Banked onto the third ring of the circuit, the ridge and the coast below. */
+/** Banked onto the fifth ring, down the east coast with the town below and the sea abeam. */
 function stageRings(game) {
-  const ring = RINGS[2];
-  game.mission.ringsPassed = 2;
-  game.mission.ringStates = RINGS.map((_, i) => (i < 2 ? 'done' : i === 2 ? 'next' : 'todo'));
-  game.mission.score = 560;
-  game.mission.elapsed = 74;
-  setPhaseDirect(game.mission, PHASE_RINGS, 'Ring 3 of 8', 'Thread the gold ring');
+  const ring = RINGS[4];
+  game.mission.ringsPassed = 4;
+  game.mission.ringStates = RINGS.map((_, i) => (i < 4 ? 'done' : i === 4 ? 'next' : 'todo'));
+  game.mission.score = 1090;
+  game.mission.elapsed = 132;
+  setPhaseDirect(game.mission, PHASE_RINGS, 'Ring 5 of 8', 'Thread the gold ring');
   Object.assign(game.plane, {
-    x: ring.x - 166,
-    y: ring.y - 6,
-    z: ring.z + 36,
-    heading: 1.36,
-    pitch: 0.03,
-    roll: -0.42,
-    speed: 64,
-    throttle: 0.8,
+    x: ring.x - 20,
+    y: ring.y + 6,
+    z: ring.z - 189,
+    heading: 3.03,
+    pitch: 0.0,
+    roll: 0.3,
+    speed: 66,
+    throttle: 0.75,
     gearDown: false,
     onGround: false,
-    fuel: 78,
+    fuel: 64,
   });
-  advance(game, { ...IDLE, roll: -0.25, pitch: 0.06 }, 0.3);
+  advance(game, { ...IDLE, roll: 0.18, pitch: 0.04 }, 0.3);
 }
 
 /** On final for Runway 36: gear down, PAPI lights ahead, the strip lined up. */

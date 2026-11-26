@@ -83,6 +83,9 @@ const terrainQuads = (() => {
         [x0, heights[j + 1][i], z1],
       ];
       const centreHeight = (points[0][1] + points[2][1]) / 2;
+      // Underwater quads are left out entirely: the sea plane covers them, and drawing the
+      // sandy floor over it (painter's order has no depth test) would paint the ocean tan.
+      if (centreHeight < 0.2) continue;
       const slope = Math.min(1, Math.abs(points[2][1] - points[0][1]) / GRID_STEP + Math.abs(points[1][1] - points[3][1]) / GRID_STEP);
       let color = terrainColor(centreHeight, slope);
       if (isForest(x0 + GRID_STEP / 2, z0 + GRID_STEP / 2, centreHeight)) color = [47, 104, 52];
@@ -104,9 +107,9 @@ export function updateCamera(camera, plane, dt, snap) {
   const fwd = forwardVector(plane.heading, plane.pitch);
   const up = { x: 0, y: 1, z: 0 };
   const wantedPos = {
-    x: plane.x - fwd.x * 30 + up.x * 10 - fwd.y * 6,
-    y: plane.y - fwd.y * 30 + 10,
-    z: plane.z - fwd.z * 30 + up.z * 10,
+    x: plane.x - fwd.x * 26 + up.x * 5.5 - fwd.y * 5,
+    y: plane.y - fwd.y * 26 + 5.5,
+    z: plane.z - fwd.z * 26 + up.z * 5.5,
   };
   // The camera never dips below the ground it flies over.
   wantedPos.y = Math.max(wantedPos.y, terrainHeight(wantedPos.x, wantedPos.z) + 3.2);
@@ -139,12 +142,13 @@ function makeProjector(camera, width, height, plane) {
   f.x /= fl; f.y /= fl; f.z /= fl;
   // Camera right from world up, then tilt the frame part-way with the aeroplane's bank so a
   // turn leans the horizon without ever rolling the view all the way over.
-  let rx = f.z, ry = 0, rz = -f.x;
+  // Camera right is forward x world-up (east when facing north); up completes the frame.
+  let rx = -f.z, ry = 0, rz = f.x;
   const rl = Math.hypot(rx, ry, rz) || 1;
   rx /= rl; ry /= rl; rz /= rl;
-  let ux = f.y * rz - f.z * ry;
-  let uy = f.z * rx - f.x * rz;
-  let uz = f.x * ry - f.y * rx;
+  let ux = ry * f.z - rz * f.y;
+  let uy = rz * f.x - rx * f.z;
+  let uz = rx * f.y - ry * f.x;
   const bank = clamp(plane.roll, -1.1, 1.1) * 0.52;
   const cb = Math.cos(bank), sb = Math.sin(bank);
   const r2 = { x: rx * cb + ux * sb, y: ry * cb + uy * sb, z: rz * cb + uz * sb };
@@ -161,23 +165,55 @@ function makeProjector(camera, width, height, plane) {
       const cy = dx * u2.x + dy * u2.y + dz * u2.z;
       return { x: width / 2 + (cx * scale) / cz, y: height / 2 - (cy * scale) / cz, depth: cz };
     },
+    /** World point in camera space: x right, y up, z forward. */
+    toCamera(p) {
+      const dx = p[0] - camera.pos.x;
+      const dy = p[1] - camera.pos.y;
+      const dz = p[2] - camera.pos.z;
+      return [
+        dx * r2.x + dy * r2.y + dz * r2.z,
+        dx * u2.x + dy * u2.y + dz * u2.z,
+        dx * f.x + dy * f.y + dz * f.z,
+      ];
+    },
+    /** Project a camera-space point (already known to be in front). */
+    projectCamera(c) {
+      return { x: width / 2 + (c[0] * scale) / c[2], y: height / 2 - (c[1] * scale) / c[2], depth: c[2] };
+    },
     depthOf(p) {
       return (p[0] - camera.pos.x) * f.x + (p[1] - camera.pos.y) * f.y + (p[2] - camera.pos.z) * f.z;
     },
   };
 }
 
-/** Fill one projected polygon; returns false when any corner falls behind the camera. */
-function fillPoly(ctx, projector, points, color, fogAmount) {
-  const screen = [];
-  let depth = 0;
-  for (const p of points) {
-    const s = projector.project(p);
-    if (s === null) return false;
-    screen.push(s);
-    depth += s.depth;
+/** Clip a camera-space polygon against the near plane (Sutherland–Hodgman, z >= NEAR). */
+function clipNear(poly) {
+  const out = [];
+  for (let i = 0; i < poly.length; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const aIn = a[2] >= NEAR;
+    const bIn = b[2] >= NEAR;
+    if (aIn) out.push(a);
+    if (aIn !== bIn) {
+      const t = (NEAR - a[2]) / (b[2] - a[2]);
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]);
+    }
   }
-  depth /= points.length;
+  return out;
+}
+
+/**
+ * Fill one world-space polygon, clipped against the near plane so ground beside and below
+ * the camera still draws; returns false only when the whole polygon is behind the camera.
+ */
+function fillPoly(ctx, projector, points, color, fogAmount) {
+  const clipped = clipNear(points.map((p) => projector.toCamera(p)));
+  if (clipped.length < 3) return false;
+  const screen = clipped.map((c) => projector.projectCamera(c));
+  let depth = 0;
+  for (const s of screen) depth += s.depth;
+  depth /= screen.length;
   const fogged = fogAmount ? mixColor(color, FOG_RGB, clamp((depth - 650) / 2500, 0, 0.82)) : color;
   ctx.fillStyle = css(fogged);
   ctx.beginPath();
